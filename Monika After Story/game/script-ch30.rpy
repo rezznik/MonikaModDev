@@ -350,6 +350,8 @@ label pick_a_game:
                 call game_pong from _call_game_pong
             "Chess" if is_platform_good_for_chess():
                 call game_chess from _call_game_chess
+            "Piano":
+                call zz_play_piano from _cal_zz_play_piano
             "Nevermind":
                 m "Alright. Maybe later?"
 
