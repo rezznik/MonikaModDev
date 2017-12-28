@@ -1,33 +1,34 @@
-# proof of concept of piano keys being played
+# Module that lets you play the piano
 #
 
-# setup sound assets
-#define pkey.C4 = "mod_assets/sounds/piano_keys/C4.ogg"
-#define pkey.C4sh = "mod_assets/sounds/piano_keys/C4sh.ogg"
-#define pkey.D4 = "mod_assets/sounds/piano_keys/D4.ogg"
-#define pkey.D4sh = "mod_assets/sounds/piano_keys/D4sh.ogg"
-#define pkey.E4 = "mod_assets/sounds/piano_keys/E4.ogg"
+# TRANSFORMS
+transform piano_quit_label:
+    xalign 0.5 yanchor 0 ypos 650
 
 # label that calls this creen
 label zz_play_piano:
-    m 1a "Play for me, [player]..."
+    m 1j "You want to play the piano?"
+    m 1a "Then play for me, [player]..."
 
     # pre call setup
-    $ disable_esc()
-    $ store.songs.enabled = False
-    $ store.hkb_button.enabled = False
+    python:
+        quit_label = Text("Press 'Z' to quit", size=36) 
+        disable_esc()
+        store.songs.enabled = False
+        store.hkb_button.enabled = False
     stop music
+    show text quit_label zorder 10 at piano_quit_label
 
     # call the display
     $ ui.add(PianoDisplayable())
     $ result = ui.interact()
 
     # post call cleanup
+    hide text quit_label
     $ store.songs.enabled = True
     $ store.hkb_button.enabled = True
     $ enable_esc()
     $ play_song(store.songs.selected_track)
-
 
     m 1j "That was wonderful, [player]!"
     return
