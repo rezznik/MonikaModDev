@@ -36,12 +36,71 @@ label zz_play_piano:
 # keep the above for reference
 # DISPLAYABLE:
 
+# this is our threshold for determining how many notes the player needs to play
+# before we check for dialogue
+define zzpk.NOTE_SIZE = 6 
+
 init python:
     import pygame # because we need them keyups 
 
+    # Exception class for piano failures
+    class PianoException(Exception):
+        def __init__(self, msg):
+            self.msg = msg
+        def __str__(self):
+            return "PianoException: " + self.msg
+
+    # this class matches particular sets of notes to some dialogue that 
+    # Monika can say.
+    # NOTE: only one line of dialogue per set of notes, because brevity is
+    #   important
+    #
+    # PROPERTIES:
+    #   say - the line of dialogue to say
+    #   notes - list of notes (keys) that we need to hear to show the dialogue
+    #       this is ORDER match only. also chords are NOT supported
+    #       NOTE: This is expected as a list of ZZPK constants.
+    #   notestr - string version of the list of notes, for matching
+    #   img - the image of monika to show
+    #
+    class PianoNoteMatch():
+        def __init__(self, say, notes, express="1a"):
+            #
+            # IN:
+            #   say - line of dialogue to say
+            #   notes - list of notes (keys) to match
+            #   express - the monika expression we want to show
+
+            if say is None or len(say) == 0:
+                raise PianoException("Dialogue must exist")
+            if notes is None or len(notes) < zzpk.NOTE_SIZE:
+                raise PianoException(
+                    "Notes list must be longer than " + str(zzpk.NOTE_SIZE)
+                )
+
+            self.say = say
+            self.notes = notes
+            self.notestr = "".join([chr(x) for x in notes])
+
+            # complicated process to convert an expression to a blitable image
+            img = renpy.display.image.images.get(("monika", express), None)
+
+            if img is None:
+                raise PianoException("Given expression was invalid")
+
+            self.img = img
+
+    # the displayable
     class PianoDisplayable(renpy.Displayable):
 
         # CONSTANTS
+        # timeout
+        TIMEOUT = 1.0 # seconds
+
+        # AT_LIST 
+        AT_LIST = [i11]
+
+        # keys
         ZZPK_QUIT = pygame.K_z
         ZZPK_F4 = pygame.K_q
         ZZPK_F4SH = pygame.K_2
@@ -205,6 +264,64 @@ init python:
                 self.ZZPK_C6: (Image(self.ZZPK_W_OVL_C6), 402, 2, 34, 210)
             }
 
+            # your reality, note matching
+            # NOTE: This works by peforming `in` matches of lists.
+            self.pnm_yourreality = [
+                PianoNoteMatch(
+                    ("{cps=*2}~Everyday, I imagine a future where I can be " +
+                    "with you~{/cps}{w=1.5}{nw}"),
+                    [
+                        self.ZZPK_G5,
+                        self.ZZPK_G5,
+                        self.ZZPK_G5,
+                        self.ZZPK_G5,
+                        self.ZZPK_F5,
+                        self.ZZPK_E5,
+                        self.ZZPK_E5,
+                        self.ZZPK_F5,
+                        self.ZZPK_G5,
+                        self.ZZPK_E5,
+                        self.ZZPK_D5,
+                        self.ZZPK_C5,
+                        self.ZZPK_D5,
+                        self.ZZPK_E5,
+                        self.ZZPK_C5,
+                        self.ZZPK_G4
+                    ],
+                    express="1j"
+                ),
+            ]
+
+            # list containing lists of matches. 
+            # NOTE: highly recommend not adding too many detections
+            self.pnm_list = [
+                self.pnm_yourreality
+            ]
+
+            # list of notes we have played
+            self.played = list()
+            self.prev_time = 0
+
+        def findnotematch(self, notes):
+            #
+            # Finds a PianoNoteMatch object that matches the given set of
+            # notes.
+            #
+            # IN:
+            #   notes - list of notes to match
+            #
+            # RETURNS:
+            #   PianoNoteMatch object that matches, or None if no match
+
+            # convert to string for ease of us
+            notestr = "".join([chr(x) for x in notes])
+
+            for pnm_s in self.pnm_list:
+                for pnm in pnm_s:
+                    if notestr in pnm.notestr:
+                        return pnm
+
+            return None
 
         def render(self, width, height, st, at):
             # renpy render function
@@ -246,6 +363,25 @@ init python:
                     )
                 )
 
+# NOTE: we might be able to use this for debug, but it crahes when given
+# an open bracket.
+#            if len(self.played) > 0:
+#                teee = Text("".join([chr(x) for x in self.played]))
+#                testT = renpy.render(teee, 1280, 720, st, at)
+#                r.blit(testT, (500,300))
+
+            # check if we have enough played notes
+            if len(self.played) >= zzpk.NOTE_SIZE:
+                match = self.findnotematch(self.played)
+
+
+                if match:
+                    r.blit(
+                        renpy.render(match.img, 1280, 720, st, at),
+                        (0, 0)
+                    )
+                    renpy.say(m, match.say, interact=False)
+
             # rerender redrawing thing
             # renpy.redraw(self, 0)
 
@@ -259,6 +395,13 @@ init python:
             # when you press down a key, we launch a sound
             if ev.type == pygame.KEYDOWN:
 
+                # we only care about keydown events regarding timeout
+                if st-self.prev_time >= self.TIMEOUT:
+                    self.played = list()
+
+                # setup previous time thing
+                self.prev_time = st
+
                 # but first, check for quit ("Z")
                 if ev.key == self.ZZPK_QUIT:
                     return "q" # quit this game
@@ -266,6 +409,9 @@ init python:
 
                     # only play a sound if we've lifted the finger
                     if not self.pressed.get(ev.key, True):
+
+                        # add to played
+                        self.played.append(ev.key)
 
                         # set appropriate value
                         self.pressed[ev.key] = True
