@@ -344,7 +344,7 @@ label pick_a_game:
         $previous_dialogue = allow_dialogue
         $allow_dialogue = False
         menu:
-            "What game would you like to play?"
+            "What would you like to play?"
             "Pong":
                 if not renpy.seen_label('game_pong'):
                     $grant_xp(xp.NEW_GAME)
@@ -357,6 +357,8 @@ label pick_a_game:
                 if not renpy.seen_label("game_hangman"):
                     $ grant_xp(xp.NEW_GAME)
                 call game_hangman from _call_game_hangman
+            "Piano":
+                call zz_play_piano from _call_play_piano
             "Nevermind":
                 m "Alright. Maybe later?"
 
