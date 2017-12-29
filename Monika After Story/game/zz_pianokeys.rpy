@@ -9,6 +9,7 @@ transform piano_quit_label:
 label zz_play_piano:
     m 1j "You want to play the piano?"
     m 1a "Then play for me, [player]..."
+    show monika 1a at t22
 
     # pre call setup
     python:
@@ -30,6 +31,7 @@ label zz_play_piano:
     $ enable_esc()
     $ play_song(store.songs.selected_track)
 
+    show monika 1j at t11
     m 1j "That was wonderful, [player]!"
     return
 
@@ -123,6 +125,30 @@ init python:
         ZZPK_B5 = pygame.K_LEFTBRACKET
         ZZPK_C6 = pygame.K_RIGHTBRACKET
 
+        # keyorder, for reference
+        ZZPK_KEYORDER = [
+            ZZPK_F4,
+            ZZPK_F4SH,
+            ZZPK_G4,
+            ZZPK_G4SH,
+            ZZPK_A4,
+            ZZPK_A4SH,
+            ZZPK_B4,
+            ZZPK_C5,
+            ZZPK_C5SH,
+            ZZPK_D5,
+            ZZPK_D5SH,
+            ZZPK_E5,
+            ZZPK_F5,
+            ZZPK_F5SH,
+            ZZPK_G5,
+            ZZPK_G5SH,
+            ZZPK_A5,
+            ZZPK_A5SH,
+            ZZPK_B5,
+            ZZPK_C6
+        ]
+
         # filenames
         ZZFP_F4 =  "mod_assets/sounds/piano_keys/F4.ogg"
         ZZFP_F4SH = "mod_assets/sounds/piano_keys/F4sh.ogg"
@@ -146,35 +172,29 @@ init python:
         ZZFP_C6 = "mod_assets/sounds/piano_keys/C6.ogg"
 
         # piano images
-        ZZPK_IMG_BACK = "mod_assets/piano/piano.png"
+        ZZPK_IMG_BACK = "mod_assets/piano/board.png"
+        ZZPK_IMG_KEYS = "mod_assets/piano/piano.png"
 
         # overlay, white
-        ZZPK_W_OVL_F4 = "mod_assets/piano/white_ovl/F4.png"
-        ZZPK_W_OVL_G4 = "mod_assets/piano/white_ovl/G4.png"
-        ZZPK_W_OVL_A4 = "mod_assets/piano/white_ovl/A4.png"
-        ZZPK_W_OVL_B4 = "mod_assets/piano/white_ovl/B4.png"
-        ZZPK_W_OVL_C5 = "mod_assets/piano/white_ovl/C5.png"
-        ZZPK_W_OVL_D5 = "mod_assets/piano/white_ovl/D5.png"
-        ZZPK_W_OVL_E5 = "mod_assets/piano/white_ovl/E5.png"
-        ZZPK_W_OVL_F5 = "mod_assets/piano/white_ovl/F5.png"
-        ZZPK_W_OVL_G5 = "mod_assets/piano/white_ovl/G5.png"
-        ZZPK_W_OVL_A5 = "mod_assets/piano/white_ovl/A5.png"
-        ZZPK_W_OVL_B5 = "mod_assets/piano/white_ovl/B5.png"
-        ZZPK_W_OVL_C6 = "mod_assets/piano/white_ovl/C6.png"
-
+        ZZPK_W_OVL_LEFT = "mod_assets/piano/ovl/ivory_left.png"
+        ZZPK_W_OVL_RIGHT = "mod_assets/piano/ovl/ivory_right.png"
+        ZZPK_W_OVL_CENTER = "mod_assets/piano/ovl/ivory_center.png"
+        ZZPK_W_OVL_PLAIN = "mod_assets/piano/ovl/ivory_plain.png"
+        
         # overlay black
-        ZZPK_B_OVL_F4SH = "mod_assets/piano/black_ovl/F4SH.png"
-        ZZPK_B_OVL_G4SH = "mod_assets/piano/black_ovl/G4SH.png"
-        ZZPK_B_OVL_A4SH = "mod_assets/piano/black_ovl/A4SH.png"
-        ZZPK_B_OVL_C5SH = "mod_assets/piano/black_ovl/C5SH.png"
-        ZZPK_B_OVL_D5SH = "mod_assets/piano/black_ovl/D5SH.png"
-        ZZPK_B_OVL_F5SH = "mod_assets/piano/black_ovl/F5SH.png"
-        ZZPK_B_OVL_G5SH = "mod_assets/piano/black_ovl/G5SH.png"
-        ZZPK_B_OVL_A5SH = "mod_assets/piano/black_ovl/A5SH.png"
+        ZZPK_B_OVL_PLAIN = "mod_assets/piano/ovl/ebony.png"
 
         # offsets for rendering
-        ZZPK_IMG_BACK_X = 10
+        ZZPK_IMG_BACK_X = 5
         ZZPK_IMG_BACK_Y = 10
+        ZZPK_IMG_KEYS_X = 51
+        ZZPK_IMG_KEYS_Y = 50
+        
+        # other sizes
+        ZZPK_IMG_IKEY_WIDTH = 36
+        ZZPK_IMG_IKEY_HEIGHT = 214
+        ZZPK_IMG_EKEY_WIDTH = 29
+        ZZPK_IMG_EKEY_HEIGHT = 152
         
         def __init__(self):
             super(renpy.Displayable,self).__init__()
@@ -183,6 +203,7 @@ init python:
 
             # background piano
             self.piano_back = Image(self.ZZPK_IMG_BACK)
+            self.piano_keys = Image(self.ZZPK_IMG_KEYS)
             self.PIANO_BACK_WIDTH = 437
             self.PIANO_BACK_HEIGHT = 214
 
@@ -235,34 +256,63 @@ init python:
                 self.ZZPK_C6: False
             }
 
+            # overlay setup
+            left = Image(self.ZZPK_W_OVL_LEFT)
+            right = Image(self.ZZPK_W_OVL_RIGHT)
+            center = Image(self.ZZPK_W_OVL_CENTER)
+            w_plain = Image(self.ZZPK_W_OVL_PLAIN) 
+            whites = [
+                (self.ZZPK_F4, left),
+                (self.ZZPK_G4, center),
+                (self.ZZPK_A4, center),
+                (self.ZZPK_B4, right),
+                (self.ZZPK_C5, left),
+                (self.ZZPK_D5, center),
+                (self.ZZPK_E5, right),
+                (self.ZZPK_F5, left),
+                (self.ZZPK_G5, center),
+                (self.ZZPK_A5, center),
+                (self.ZZPK_B5, right),
+                (self.ZZPK_C6, w_plain),
+            ]
+
+            # key, x coord
+            # NOTE: this is differente because black keys are not separated
+            # equally
+            b_plain = Image(self.ZZPK_B_OVL_PLAIN)
+            blacks = [
+                (self.ZZPK_F4SH, 73),
+                (self.ZZPK_G4SH, 110),
+                (self.ZZPK_A4SH, 147),
+                (self.ZZPK_C5SH, 221),
+                (self.ZZPK_D5SH, 258),
+                (self.ZZPK_F5SH, 332),
+                (self.ZZPK_G5SH, 369),
+                (self.ZZPK_A5SH, 406)
+            ]
+
             # overlay dict
             # NOTE: x and y are assumed to be relative to the top let of
             #   the piano_back image
-            # (overlay image, x coord, y coord, width, height)
-            #
-            # NOTE: we have to do this because not every image is the same
-            self.overlays = {
-                self.ZZPK_F4: (Image(self.ZZPK_W_OVL_F4), 1, 2, 35, 210),
-                self.ZZPK_F4SH: (Image(self.ZZPK_B_OVL_F4SH), 24, 2, 26, 149),
-                self.ZZPK_G4: (Image(self.ZZPK_W_OVL_G4), 37, 2, 33, 210),
-                self.ZZPK_G4SH: (Image(self.ZZPK_B_OVL_G4SH), 60, 2, 25, 149),
-                self.ZZPK_A4: (Image(self.ZZPK_W_OVL_A4), 73, 2, 36, 210),
-                self.ZZPK_A4SH: (Image(self.ZZPK_B_OVL_A4SH), 97, 2, 25, 149),
-                self.ZZPK_B4: (Image(self.ZZPK_W_OVL_B4), 110, 2, 36, 210),
-                self.ZZPK_C5: (Image(self.ZZPK_W_OVL_C5), 147, 2, 34, 210),
-                self.ZZPK_C5SH: (Image(self.ZZPK_B_OVL_C5SH), 170, 2, 25, 149),
-                self.ZZPK_D5: (Image(self.ZZPK_W_OVL_D5), 182, 2, 36, 210),
-                self.ZZPK_D5SH: (Image(self.ZZPK_B_OVL_D5SH), 205, 2, 25, 149),
-                self.ZZPK_E5: (Image(self.ZZPK_W_OVL_E5), 219, 2, 36, 210),
-                self.ZZPK_F5: (Image(self.ZZPK_W_OVL_F5), 256, 2, 35, 210),
-                self.ZZPK_F5SH: (Image(self.ZZPK_B_OVL_F5SH), 279, 2, 25, 149),
-                self.ZZPK_G5: (Image(self.ZZPK_W_OVL_G5), 292, 2, 36, 210),
-                self.ZZPK_G5SH: (Image(self.ZZPK_B_OVL_G5SH), 315, 2, 25, 149),
-                self.ZZPK_A5: (Image(self.ZZPK_W_OVL_A5), 329, 2, 36, 210),
-                self.ZZPK_A5SH: (Image(self.ZZPK_B_OVL_A5SH), 352, 2, 25, 149),
-                self.ZZPK_B5: (Image(self.ZZPK_W_OVL_B5), 366, 2, 35, 210),
-                self.ZZPK_C6: (Image(self.ZZPK_W_OVL_C6), 402, 2, 34, 210)
-            }
+            # (overlay image, x coord, y coord)
+            self.overlays = dict()
+
+            # white overlay processing
+            for i in range(0,len(whites)):
+                k,img = whites[i]
+                self.overlays[k] = (
+                    img,
+                    self.ZZPK_IMG_KEYS_X + (i * (self.ZZPK_IMG_IKEY_WIDTH + 1)),
+                    self.ZZPK_IMG_KEYS_Y
+                )
+
+            # blacks overlay processing
+            for k,x in blacks:
+                self.overlays[k] = (
+                    b_plain,
+                    x,
+                    self.ZZPK_IMG_KEYS_Y
+                )
 
             # your reality, note matching
             # NOTE: This works by peforming `in` matches of lists.
@@ -330,7 +380,9 @@ init python:
             r = renpy.Render(width, height)
 
             # prepare piano back as render
-            piano = renpy.render(self.piano_back, 1280, 720, st, at)
+            back = renpy.render(self.piano_back, 1280, 720, st, at)
+            piano = renpy.render(self.piano_keys, 1280, 720, st, at)
+            
 
             # now prepare overlays to render
             overlays = list()
@@ -346,10 +398,17 @@ init python:
 
             # Draw the piano
             r.blit(
+                back,
+                (
+                    self.ZZPK_IMG_BACK_X,
+                    self.ZZPK_IMG_BACK_Y
+                )
+            )
+            r.blit(
                 piano, 
                 (
-                    self.ZZPK_IMG_BACK_X, 
-                    self.ZZPK_IMG_BACK_Y
+                    self.ZZPK_IMG_KEYS_X + self.ZZPK_IMG_BACK_X, 
+                    self.ZZPK_IMG_KEYS_Y + self.ZZPK_IMG_BACK_Y
                 )
             )
 
@@ -375,12 +434,12 @@ init python:
                 match = self.findnotematch(self.played)
 
 
-                if match:
-                    r.blit(
-                        renpy.render(match.img, 1280, 720, st, at),
-                        (0, 0)
-                    )
-                    renpy.say(m, match.say, interact=False)
+#                if match:
+#                    r.blit(
+#                        renpy.render(match.img, 1280, 720, st, at),
+#                        (0, 0)
+#                    )
+#                    renpy.say(m, match.say, interact=False)
 
             # rerender redrawing thing
             # renpy.redraw(self, 0)
