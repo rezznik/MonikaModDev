@@ -3,7 +3,7 @@
 
 # TRANSFORMS
 transform piano_quit_label:
-    xalign 0.5 yanchor 0 ypos 650
+    xanchor 0.5 xpos 275 yanchor 0 ypos 332
 
 # label that calls this creen
 label zz_play_piano:
@@ -64,6 +64,7 @@ init python:
     #       NOTE: This is expected as a list of ZZPK constants.
     #   notestr - string version of the list of notes, for matching
     #   img - the image of monika to show
+    #   express - the expression we want monika to show
     #
     class PianoNoteMatch():
         def __init__(self, say, notes, express="1a"):
@@ -83,6 +84,7 @@ init python:
             self.say = say
             self.notes = notes
             self.notestr = "".join([chr(x) for x in notes])
+            self.express = express
 
             # complicated process to convert an expression to a blitable image
             img = renpy.display.image.images.get(("monika", express), None)
@@ -100,7 +102,7 @@ init python:
         TIMEOUT = 1.0 # seconds
 
         # AT_LIST 
-        AT_LIST = [i11]
+        AT_LIST = [i22]
 
         # keys
         ZZPK_QUIT = pygame.K_z
@@ -434,12 +436,22 @@ init python:
                 match = self.findnotematch(self.played)
 
 
-#                if match:
+                if match:
+                    renpy.show(
+                        "monika " + match.express,
+                        at_list=self.AT_LIST,
+                        zorder=10,
+                        layer="transient"
+                    )
+#                    renpy.force_full_redraw()
 #                    r.blit(
 #                        renpy.render(match.img, 1280, 720, st, at),
 #                        (0, 0)
 #                    )
 #                    renpy.say(m, match.say, interact=False)
+#                    renpy.force_full_redraw()
+
+                    renpy.restart_interaction()
 
             # rerender redrawing thing
             # renpy.redraw(self, 0)
