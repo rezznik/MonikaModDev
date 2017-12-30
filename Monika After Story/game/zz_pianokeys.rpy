@@ -5,6 +5,9 @@
 transform piano_quit_label:
     xanchor 0.5 xpos 275 yanchor 0 ypos 332
 
+transform piano_lyric_label:
+    xalign 0.5 yalign 0.5 with Dissolve(0.5)
+
 # label that calls this creen
 label zz_play_piano:
     m 1j "You want to play the piano?"
@@ -58,21 +61,43 @@ init python:
     #   important
     #
     # PROPERTIES:
-    #   say - the line of dialogue to say
+    #   say - the line of dialogue to say (as a Text object)
     #   notes - list of notes (keys) that we need to hear to show the dialogue
     #       this is ORDER match only. also chords are NOT supported
     #       NOTE: This is expected as a list of ZZPK constants.
     #   notestr - string version of the list of notes, for matching
-    #   img - the image of monika to show
-    #   express - the expression we want monika to show
+    #   express - the expression we want monika to show (prefixed with monika)
+    #   matched - True if we were matched this session, False otherwise
+    #   matchdex - Basically an index that says where the last matched note is
+    #       in notestr (and notes, by extension)
+    #   timeout - number of seconds before the dialogue should be removed
+    #       after a match is done
+    #   fails - number of failed attempts to play this
+    #   passes - number of succesful attempts to play this
+    #   postnotes - list of notes (keys) that are considered post match.
+    #       NOTE: so if this is played after the match, monika will continue
+    #           her expression until a miss or the set is complete.
+    #           in both cases, we should expect a clearing of played
     #
     class PianoNoteMatch():
-        def __init__(self, say, notes, express="1a"):
+        def __init__(self, 
+                say, 
+                notes, 
+                postnotes=None, 
+                express="1a", 
+                timeout=0
+            ):
             #
             # IN:
-            #   say - line of dialogue to say
-            #   notes - list of notes (keys) to match
+            #   say - line of dialogue to say (as a Text object)
+            #   notes - list of notes (keys) to match 
+            #   postnotes - list of notes (keys) that are considered post
+            #       match
+            #       (Default: None)
             #   express - the monika expression we want to show
+            #       (Default: 1a)
+            #   timeout - the number of seconds the dialogue should display
+            #       after matches stop
 
             if say is None or len(say) == 0:
                 raise PianoException("Dialogue must exist")
@@ -80,19 +105,48 @@ init python:
                 raise PianoException(
                     "Notes list must be longer than " + str(zzpk.NOTE_SIZE)
                 )
+            if timeout < 0:
+                raise PianoException("Timeout must be positive number")
+            if type(say) is not Text:
+                raise PianoException("say must be of type Text")
+            if not renpy.image_exists("monika " + express):
+                raise PianoException("Given expression does not exist")
 
             self.say = say
             self.notes = notes
             self.notestr = "".join([chr(x) for x in notes])
-            self.express = express
+            self.express = "monika " + express
+            self.matched = False
+            self.matchdex = 0
+            self.timeout = timeout
+            self.fails = 0
+            self.passes = 0
+            self.postnotes = postnotes
 
-            # complicated process to convert an expression to a blitable image
-            img = renpy.display.image.images.get(("monika", express), None)
+        def is_match(self, new_key, index=self.matchdex):
+            #
+            # checks if the new key continous the match that we are expecting
+            #
+            # IN:
+            #   new_key - the key we want to check (pygame key)
+            #   index - current index we need to look at
+            #       (Default: self.matchdex)
+            #
+            # OUT:
+            #   returns 1 or larger if we have a match
+            #       -1 if no match
+            #       -2 if index out of range
 
-            if img is None:
-                raise PianoException("Given expression was invalid")
+            if index >= len(self.notes):
+                return -2
 
-            self.img = img
+            findkey = self.notes[index]
+
+            if findkey == new_key:
+                self.matchdex = index + 1
+                return 1
+
+            return -1
 
     # the displayable
     class PianoDisplayable(renpy.Displayable):
@@ -100,9 +154,28 @@ init python:
         # CONSTANTS
         # timeout
         TIMEOUT = 1.0 # seconds
+        AWK_TIMEOUT = 1.0 # number of seconds to display awkward face
 
         # AT_LIST 
         AT_LIST = [i22]
+        TEXT_AT_LIST = [piano_lyric_label]
+
+        # expressions
+        DEFAULT = "monika 1a"
+        AWKWARD = "monika 1l"
+        HAPPY = "monika 1j"
+
+        # Text related
+        TEXT_TAG = "piano_text"
+
+        # STATEMACHINE STUFF
+        STATE_LISTEN = 0 # default state
+        STATE_JMATCH = 1 # we matched a note
+        STATE_MATCH = 6 # currently matching a phrase
+        STATE_MISS = 2 # you missed a note
+        STATE_FAIL = 3 # you failed a phrase
+        STATE_POST = 5 # post match state, where we match post notes 
+        STATE_CLEAN = 4 # reset things
 
         # keys
         ZZPK_QUIT = pygame.K_z
@@ -353,6 +426,25 @@ init python:
             # list of notes we have played
             self.played = list()
             self.prev_time = 0
+            
+            # currently matched dialogue
+            self.match = None
+
+            # True if we literally just matched, False if not
+            self.justmatched = False 
+
+            # true only if we had a missed match, after a match
+            self.missed_one = False
+
+            # contains the previously matched pnm
+            self.lastmatch = None
+
+            # true if we failed the last match
+            # NOTE: this should be reset by timeout, also when match is found
+            self.failed = False
+
+            # NOTE: the current state
+            self.state = self.STATE_LISTEN
 
         def findnotematch(self, notes):
             #
@@ -370,7 +462,10 @@ init python:
 
             for pnm_s in self.pnm_list:
                 for pnm in pnm_s:
-                    if notestr in pnm.notestr:
+                    findex = pnm.notestr.find(notestr)
+                    if findex >= 0:
+                        pnm.matchdex = findex + len(notestr)
+                        pnm.matched = True
                         return pnm
 
             return None
@@ -424,16 +519,50 @@ init python:
                     )
                 )
 
-# NOTE: we might be able to use this for debug, but it crahes when given
-# an open bracket.
-#            if len(self.played) > 0:
-#                teee = Text("".join([chr(x) for x in self.played]))
-#                testT = renpy.render(teee, 1280, 720, st, at)
-#                r.blit(testT, (500,300))
+            # True if we need to do an interaction restart
+            restart_int = False
 
-            # check if we have enough played notes
-            if len(self.played) >= zzpk.NOTE_SIZE:
-                match = self.findnotematch(self.played)
+            # check if we are currently matching something
+            # NOTE: the following utilizies renpy.show, which means we need
+            #   to use renpy.restart_interaction(). This also means that the
+            #   changes that occur here shouldnt be rendered
+            if self.match:
+
+                # check if a failure
+                if self.missed_one:
+                    
+                    # display an awkward expresseion monika
+                    renpy.show(self.AWKWARD)
+                    restart_int = True
+
+                # otherwise, currently matching, display text
+                elif self.justmatched:
+                    # this case is only for JUST MATCHING.
+                    # since renpy is event driven, we don't actually care
+                    # about re-rendering and keeping time because events
+                    # take care of that for us
+                    # 
+
+                    # display monika's expression
+                    renpy.show(self.match.express)
+                    
+
+                    # display text
+                    renpy.show(
+                        self.match.say,
+                        at_list=self.TEXT_AT_LIST,
+                        zorder=11,
+                        tag=self.TEXT_TAG
+                    )
+                    restart_int = True
+
+                # NOTE: we dont do an else case here because its not important
+                
+            elif self.lastmatch:
+                
+                # now here, we do a redraw timeout because we need a timeout
+                # for last match display
+
 
 
                 if match:
@@ -486,6 +615,71 @@ init python:
 
                         # set appropriate value
                         self.pressed[ev.key] = True
+
+                        # check if we have enough played notes
+                        if (
+                                self.state == self.STATE_LISTEN
+                                and len(self.played) >= zzpk.NOTE_SIZE
+                            ):
+                            self.match = self.findnotematch(self.played)
+                            self.state = STATE_JMATCH
+
+                        # post match checking
+                        elif self.state == self.STATE_POST:
+                            # TODO: do similar matching but
+
+                        # preprocess match
+                        elif (
+                                self.state == self.STATE_MATCH
+                                or self.state == self.STATE_MISS
+                                or self.state == self.STATE_JMATCH
+                            ):
+                            # we have a match, check to ensure that this key
+                            # follows the pattern
+                            findex = self.match.is_match(ev.key)
+
+                            # failed match
+                            if findex < 0:
+
+                                # -1 is a non match
+                                if findex == -1:
+
+                                    # check for a double failure, which means
+                                    # we failed entirely on playing this piece
+                                    if self.state == self.STATE_MISS:
+                                        self.match.fails += 1
+                                        self.state = self.STATE_FAIL
+
+                                        # incase of a double failure, we zero
+                                        # the list and the prev time
+                                        self.prev_time = 0
+                                        self.played = list()
+
+                                        # clear the match
+                                        self.lastmatch = None
+                                        self.match = None
+
+                                    # this is our first failure, just take note
+                                    else:
+                                        self.state = self.STATE_MISS
+
+                                # -2 means out of range, we're done with the 
+                                # match
+                                elif findex == -2:
+
+                                    # check for not none post
+                                    if self.match.postnotes:
+                                        self.state = self.STATE_POST
+                                    else:
+                                        self.state = self.STATE_CLEAN
+                                        self.lastmatch = self.match
+                                        self.match = None
+                                    
+                                    self.match.passes += 1
+
+                            # otherwise, we matched, but need to clear fails
+                            else:
+                                self.state == self.STATE_MATCH
 
                         # get a sound to play
                         renpy.play(self.pkeys[ev.key], channel="audio")
