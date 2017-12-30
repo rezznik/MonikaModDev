@@ -6,7 +6,7 @@ transform piano_quit_label:
     xanchor 0.5 xpos 275 yanchor 0 ypos 332
 
 transform piano_lyric_label:
-    xalign 0.5 yalign 0.5 with Dissolve(0.5)
+    xalign 0.5 yalign 0.5
 
 # label that calls this creen
 label zz_play_piano:
@@ -78,13 +78,15 @@ init python:
     #       NOTE: so if this is played after the match, monika will continue
     #           her expression until a miss or the set is complete.
     #           in both cases, we should expect a clearing of played
+    #   postexpress - expression monika should have during post mode
     #
     class PianoNoteMatch():
         def __init__(self, 
                 say, 
                 notes, 
                 postnotes=None, 
-                express="1a", 
+                express="1b", 
+                postexpress="1a",
                 timeout=0
             ):
             #
@@ -95,12 +97,13 @@ init python:
             #       match
             #       (Default: None)
             #   express - the monika expression we want to show
+            #       (Default: 1b)
+            #   postexpress - the monika expression to show during post
             #       (Default: 1a)
             #   timeout - the number of seconds the dialogue should display
             #       after matches stop
+            #       (Default: 0)
 
-            if say is None or len(say) == 0:
-                raise PianoException("Dialogue must exist")
             if notes is None or len(notes) < zzpk.NOTE_SIZE:
                 raise PianoException(
                     "Notes list must be longer than " + str(zzpk.NOTE_SIZE)
@@ -111,6 +114,8 @@ init python:
                 raise PianoException("say must be of type Text")
             if not renpy.image_exists("monika " + express):
                 raise PianoException("Given expression does not exist")
+            if not renpy.image_exists("monika " + postexpress):
+                raise PianoException("Given post expression does not exist")
 
             self.say = say
             self.notes = notes
@@ -122,10 +127,11 @@ init python:
             self.fails = 0
             self.passes = 0
             self.postnotes = postnotes
+            self.postexpress = "monika " + postexpress
 
-        def is_match(self, new_key, index=self.matchdex):
+        def isNoteMatch(self, new_key, index=None):
             #
-            # checks if the new key continous the match that we are expecting
+            # Checks if the new key continous a notes match
             #
             # IN:
             #   new_key - the key we want to check (pygame key)
@@ -136,13 +142,47 @@ init python:
             #   returns 1 or larger if we have a match
             #       -1 if no match
             #       -2 if index out of range
+            
+            return self._is_match(new_key, self.notes, index=index)
 
-            if index >= len(self.notes):
+        def isPostMatch(self, new_key, index=None):
+            #
+            # Checks if the new key continous a post match
+            #
+            # IN:
+            #   new_key - the key we want to check (pygame key)
+            #   index - current index we need to look at
+            #       (Default: self.matchdex)
+            #
+            # OUT:
+            #   returns 1 or large if we have a match
+            #       -1 if no match
+            #       -2 if index out of range
+
+            return self._is_match(new_key, self.postnotes, index=index)
+
+        def _is_match(self, new_key, notes, index=None):
+            #
+            # checks if the new key continous the match that we are expecting
+            #
+            # IN:
+            #   new_key - the key we want to check (pygame key)
+            #   notes - the notes list we want to look at
+            #   index - current index we need to look at
+            #       (Default: self.matchdex)
+            #
+            # OUT:
+            #   returns 1 or larger if we have a match
+            #       -1 if no match
+            #       -2 if index out of range
+        
+            if index is None:
+                index = self.matchdex
+
+            if index >= len(notes):
                 return -2
 
-            findkey = self.notes[index]
-
-            if findkey == new_key:
+            if new_key == notes[index]:
                 self.matchdex = index + 1
                 return 1
 
@@ -154,7 +194,13 @@ init python:
         # CONSTANTS
         # timeout
         TIMEOUT = 1.0 # seconds
-        AWK_TIMEOUT = 1.0 # number of seconds to display awkward face
+        SONG_TIMEOUT = 2.0 # seconds
+        SONG_VIS_TIMEOUT = 4.0 # seconds
+#        FAIL_TIMEOUT = 4.0 # number of seconds to display awkward face on fail
+#        MISS_TIMEOUT = 4.0 # number of seconds to display awkard face on miss
+#        MATCH_TIMEOUT = 4.0 # number of seconds to wait for match notes
+        VIS_TIMEOUT = 2.5 # number of seconds to wait before changing face
+        
 
         # AT_LIST 
         AT_LIST = [i22]
@@ -164,6 +210,7 @@ init python:
         DEFAULT = "monika 1a"
         AWKWARD = "monika 1l"
         HAPPY = "monika 1j"
+        FAILED = "monika 1m"
 
         # Text related
         TEXT_TAG = "piano_text"
@@ -171,11 +218,17 @@ init python:
         # STATEMACHINE STUFF
         STATE_LISTEN = 0 # default state
         STATE_JMATCH = 1 # we matched a note
-        STATE_MATCH = 6 # currently matching a phrase
-        STATE_MISS = 2 # you missed a note
-        STATE_FAIL = 3 # you failed a phrase
-        STATE_POST = 5 # post match state, where we match post notes 
-        STATE_CLEAN = 4 # reset things
+        STATE_MATCH = 2 # currently matching a phrase
+        STATE_MISS = 3 # you missed a note
+        STATE_FAIL = 4 # you failed a phrase
+        STATE_JPOST = 5 # we just entered post match
+        STATE_POST = 6 # post match state, where we match post notes 
+        STATE_VPOST = 7 # only visual post match, until next key is hit or time
+        STATE_WPOST = 8 # waitin post-state
+        STATE_CLEAN = 9 # reset things
+
+        # key limit for matching
+        KEY_LIMIT = 100
 
         # keys
         ZZPK_QUIT = pygame.K_z
@@ -250,6 +303,9 @@ init python:
         ZZPK_IMG_BACK = "mod_assets/piano/board.png"
         ZZPK_IMG_KEYS = "mod_assets/piano/piano.png"
 
+        # lyrical bar
+        ZZPK_LYR_BAR = "mod_assets/piano/lyrical_bar.png"
+
         # overlay, white
         ZZPK_W_OVL_LEFT = "mod_assets/piano/ovl/ivory_left.png"
         ZZPK_W_OVL_RIGHT = "mod_assets/piano/ovl/ivory_right.png"
@@ -264,6 +320,7 @@ init python:
         ZZPK_IMG_BACK_Y = 10
         ZZPK_IMG_KEYS_X = 51
         ZZPK_IMG_KEYS_Y = 50
+        ZZPK_LYR_BAR_YOFF = -50
         
         # other sizes
         ZZPK_IMG_IKEY_WIDTH = 36
@@ -281,6 +338,9 @@ init python:
             self.piano_keys = Image(self.ZZPK_IMG_KEYS)
             self.PIANO_BACK_WIDTH = 437
             self.PIANO_BACK_HEIGHT = 214
+
+            # lyric bar
+            self.lyrical_bar = Image(self.ZZPK_LYR_BAR)
 
             # setup sounds
             # sound dict:
@@ -393,8 +453,10 @@ init python:
             # NOTE: This works by peforming `in` matches of lists.
             self.pnm_yourreality = [
                 PianoNoteMatch(
-                    ("{cps=*2}~Everyday, I imagine a future where I can be " +
-                    "with you~{/cps}{w=1.5}{nw}"),
+                    Text(
+                        "Everyday, I imagine a future where I can be with you",
+                        style="monika_credits_text"
+                    ),
                     [
                         self.ZZPK_G5,
                         self.ZZPK_G5,
@@ -413,8 +475,109 @@ init python:
                         self.ZZPK_C5,
                         self.ZZPK_G4
                     ],
-                    express="1j"
+                    postnotes=[
+                        self.ZZPK_G5,
+                        self.ZZPK_A5,
+                        self.ZZPK_G5,
+                        self.ZZPK_G5,
+                        self.ZZPK_A5,
+                        self.ZZPK_G5,
+                        self.ZZPK_C6,
+                        self.ZZPK_C6,
+                        self.ZZPK_A5,
+                        self.ZZPK_B5,
+                        self.ZZPK_G5,
+                        self.ZZPK_A5,
+                        self.ZZPK_B5,
+                        self.ZZPK_G5
+                    ],
+                    express="1k",
+                    postexpress="1j"
                 ),
+                PianoNoteMatch(
+                    Text(
+                        ("In my hands, is a pen that will write a poem of me" +
+                        " and you"),
+                        style="monika_credits_text"
+                    ),
+                    [
+                        self.ZZPK_G5,
+                        self.ZZPK_A5,
+                        self.ZZPK_G5,
+                        self.ZZPK_E5,
+                        self.ZZPK_F5,
+                        self.ZZPK_G5,
+                        self.ZZPK_F5,
+                        self.ZZPK_E5,
+                        self.ZZPK_D5,
+                        self.ZZPK_A4,
+                        self.ZZPK_G4,
+                        self.ZZPK_F4,
+                        self.ZZPK_A4,
+                        self.ZZPK_G4,
+                        self.ZZPK_E5,
+                        self.ZZPK_C5
+                    ],
+                    postnotes=[
+                        self.ZZPK_G5,
+                        self.ZZPK_A5,
+                        self.ZZPK_G5,
+                        self.ZZPK_G5,
+                        self.ZZPK_A5,
+                        self.ZZPK_G5,
+                        self.ZZPK_C6,
+                        self.ZZPK_C6,
+                        self.ZZPK_A5,
+                        self.ZZPK_B5,
+                        self.ZZPK_G5,
+                        self.ZZPK_A5,
+                        self.ZZPK_B5,
+                        self.ZZPK_G5
+                    ],
+                    express="1b",
+                    postexpress="1a"
+                ),
+                PianoNoteMatch(
+                    Text(
+                        "The ink flows down into a dark puddle",
+                        style="monika_credits_text"
+                    ),
+                    [
+                        self.ZZPK_G5,
+                        self.ZZPK_G5,
+                        self.ZZPK_G5,
+                        self.ZZPK_F5,
+                        self.ZZPK_E5,
+                        self.ZZPK_C5,
+                        self.ZZPK_C5,
+                        self.ZZPK_D5,
+                        self.ZZPK_E5,
+                        self.ZZPK_G5
+                    ],
+                    express="1b",
+                    postexpress="1a"
+                ),
+                PianoNoteMatch(
+                    Text(
+                        "Just move your hands - write the way into his heart",
+                        style="monika_credits_text"
+                    ),
+                    [
+                        self.ZZPK_A5,
+                        self.ZZPK_G5,
+                        self.ZZPK_E5,
+                        self.ZZPK_D5,
+                        self.ZZPK_G4,
+                        self.ZZPK_A4,
+                        self.ZZPK_C5,
+                        self.ZZPK_A4,
+                        self.ZZPK_C5,
+                        self.ZZPK_D5,
+                        self.ZZPK_C5
+                    ],
+                    express="1k",
+                    postexpress="1j"
+                )
             ]
 
             # list containing lists of matches. 
@@ -446,6 +609,19 @@ init python:
             # NOTE: the current state
             self.state = self.STATE_LISTEN
 
+            # currently visible text
+            self.lyric = None
+
+            # what index of piano matching should we be looking at
+            self.pnm_index = 0
+
+            # timeouts
+            self.ev_timeout = self.TIMEOUT
+            self.vis_timeout = self.VIS_TIMEOUT
+
+            # DEBUG: NOTE:
+            self.testing = open("piano", "w+")
+
         def findnotematch(self, notes):
             #
             # Finds a PianoNoteMatch object that matches the given set of
@@ -460,15 +636,53 @@ init python:
             # convert to string for ease of us
             notestr = "".join([chr(x) for x in notes])
 
-            for pnm_s in self.pnm_list:
-                for pnm in pnm_s:
-                    findex = pnm.notestr.find(notestr)
-                    if findex >= 0:
-                        pnm.matchdex = findex + len(notestr)
-                        pnm.matched = True
-                        return pnm
+            for index in range(0, len(self.pnm_yourreality)):
+                pnm = self.pnm_yourreality[index]
+                findex = pnm.notestr.find(notestr)
+                if findex >= 0:
+                    pnm.matchdex = findex + len(notestr)
+                    pnm.matched = True
+                    self.pnm_index = index
+                    return pnm
 
             return None
+
+        def getnotematch(self, index=None):
+            #
+            # returns the notematch object at the given index
+            # 
+            # IN:
+            #   index - the index to retrieve notematch.
+            #       If None, the self.pnm_index is incremeneted and used as
+            #       the index
+            #
+            # OUT:
+            #   returns PianoNoteMatch object at index, or None if index is
+            #   beyond the grave
+
+            if index is None:
+                self.pnm_index += 1
+                index = self.pnm_index
+
+            if index >= len(self.pnm_yourreality):
+                return None
+
+            return self.pnm_yourreality[index]
+
+        def setsongmode(self, songmode=True):
+            #
+            # sets our timeout vars into song mode
+            #
+            # IN:
+            #   songmode - True means set into song mode, False means get out
+            #       (Default: True)
+
+            if songmode:
+                self.ev_timeout = self.SONG_TIMEOUT
+                self.vis_timeout = self.SONG_VIS_TIMEOUT
+            else:
+                self.ev_timeout = self.TIMEOUT
+                self.vis_timeout = self.VIS_TIMEOUT
 
         def render(self, width, height, st, at):
             # renpy render function
@@ -519,6 +733,10 @@ init python:
                     )
                 )
 
+            # preprocessing for timeouts
+            if st-self.prev_time >= self.vis_timeout:
+                self.state = self.STATE_CLEAN
+
             # True if we need to do an interaction restart
             restart_int = False
 
@@ -526,52 +744,100 @@ init python:
             # NOTE: the following utilizies renpy.show, which means we need
             #   to use renpy.restart_interaction(). This also means that the
             #   changes that occur here shouldnt be rendered
-            if self.match:
+            # STATE MACHINE
+            if self.state == self.STATE_CLEAN:
 
-                # check if a failure
-                if self.missed_one:
-                    
-                    # display an awkward expresseion monika
-                    renpy.show(self.AWKWARD)
-                    restart_int = True
+                # default monika
+                renpy.show(self.DEFAULT)
 
-                # otherwise, currently matching, display text
-                elif self.justmatched:
-                    # this case is only for JUST MATCHING.
-                    # since renpy is event driven, we don't actually care
-                    # about re-rendering and keeping time because events
-                    # take care of that for us
-                    # 
+                # hide text
+                self.lyric = None
+
+                restart_int = True
+                self.state = self.STATE_LISTEN
+                self.setsongmode(False)
+
+            elif self.state != self.STATE_LISTEN:
+
+                if self.state == self.STATE_JMATCH:
 
                     # display monika's expression
                     renpy.show(self.match.express)
                     
-
                     # display text
-                    renpy.show(
-                        self.match.say,
-                        at_list=self.TEXT_AT_LIST,
-                        zorder=11,
-                        tag=self.TEXT_TAG
-                    )
+                    self.lyric = self.match.say
+
+                    restart_int = True
+                    self.state = self.STATE_MATCH
+
+                elif self.state == self.STATE_MISS:
+
+                    # display an awkward expresseion monika
+                    renpy.show(self.AWKWARD)
                     restart_int = True
 
-                # NOTE: we dont do an else case here because its not important
-                
-            elif self.lastmatch:
-                
-                # now here, we do a redraw timeout because we need a timeout
-                # for last match display
+                elif self.state == self.STATE_VPOST:
+                    
+                    # display the post expression
+                    if self.match.postexpress:
+                        renpy.show(self.match.postexpress)
+                        restart_int = True
+
+                    # hide text
+                    self.lyric = None
+                    self.state = self.STATE_WPOST
+
+                elif self.state == self.STATE_JPOST:
+                    
+                    # display monikas post expression
+                    renpy.show(self.match.postexpress)
+
+                    # hide text
+                    self.lyric = None
+
+                    restart_int = True
+                    self.state = self.STATE_POST
+
+                elif self.state == self.STATE_FAIL:
+
+                    # display failed monika
+                    renpy.show(self.FAILED)
+
+                    # hide text
+                    self.lyric = None
+
+                    restart_int = True
+                    self.state = self.STATE_CLEAN
+
+                # redraw timeout
+                renpy.redraw(self, self.VIS_TIMEOUT)
 
 
-
-                if match:
-                    renpy.show(
-                        "monika " + match.express,
-                        at_list=self.AT_LIST,
-                        zorder=10,
-                        layer="transient"
+            if self.lyric:
+                lyric_bar = renpy.render(self.lyrical_bar, 1280, 720, st, at)
+                lyric = renpy.render(self.lyric, 1280, 720, st, at)
+                pw, ph = lyric.get_size()
+                r.blit(
+                    lyric_bar,
+                    (
+                        0,
+                        int((height - 50) /2) - self.ZZPK_LYR_BAR_YOFF
                     )
+                )
+                r.blit(
+                    lyric,
+                    (
+                        int((width - pw) / 2),
+                        int((height - ph) / 2) - self.ZZPK_LYR_BAR_YOFF
+                    )
+                )
+
+#                    renpy.show(
+#                        "monika " + match.express,
+#                        at_list=self.AT_LIST,
+#                        zorder=10,
+#                        layer="transient"
+#                    )
 #                    renpy.force_full_redraw()
 #                    r.blit(
 #                        renpy.render(match.img, 1280, 720, st, at),
@@ -580,7 +846,8 @@ init python:
 #                    renpy.say(m, match.say, interact=False)
 #                    renpy.force_full_redraw()
 
-                    renpy.restart_interaction()
+            if restart_int:
+                renpy.restart_interaction()
 
             # rerender redrawing thing
             # renpy.redraw(self, 0)
@@ -595,9 +862,26 @@ init python:
             # when you press down a key, we launch a sound
             if ev.type == pygame.KEYDOWN:
 
-                # we only care about keydown events regarding timeout
-                if st-self.prev_time >= self.TIMEOUT:
+                if len(self.played) > self.KEY_LIMIT:
                     self.played = list()
+
+                # we only care about keydown events regarding timeout
+                elif st-self.prev_time >= self.ev_timeout:
+
+#                    self.testing.write("".join([chr(x) for x in self.played])+ "\n")
+                    self.played = list()
+
+                    if self.state != self.STATE_LISTEN:
+                        self.state = self.STATE_CLEAN
+                        renpy.redraw(self, 0)
+
+#   DEBUG: NOTE:
+#                if self.match:
+#                    self.testing.write(
+#                        chr(ev.key) + " : " + str(self.state) + " : " +
+#                        str(self.match.matchdex) + "\n")
+#                else:
+#                    self.testing.write(chr(ev.key) + " : " + str(self.state) + "\n")
 
                 # setup previous time thing
                 self.prev_time = st
@@ -622,11 +906,49 @@ init python:
                                 and len(self.played) >= zzpk.NOTE_SIZE
                             ):
                             self.match = self.findnotematch(self.played)
-                            self.state = STATE_JMATCH
+
+                            # check if match
+                            if self.match:
+                                self.state = self.STATE_JMATCH
 
                         # post match checking
                         elif self.state == self.STATE_POST:
-                            # TODO: do similar matching but
+                            # post match means we abort on the first miss
+                            findex = self.match.isPostMatch(ev.key)
+
+                            # abort post
+                            if findex == -1:
+                                self.state = self.STATE_CLEAN
+                                self.played = [ev.key]
+
+                            # successful post
+                            elif self.match.matchdex == len(self.match.postnotes):
+                                
+                                next_pnm = self.getnotematch()
+
+                                # check next set of notes
+                                if next_pnm:
+
+                                    self.match = next_pnm
+                                    self.state = self.STATE_WPOST
+                                    self.played = list()
+                                    self.setsongmode()
+
+                                # abourt please
+                                else:
+                                    self.state = self.STATE_CLEAN
+
+                        # waiting post
+                        elif self.state == self.STATE_WPOST:
+                            # here we check the just hit note for matching
+                            findex = self.match.isNoteMatch(ev.key, index=0)
+
+                            if findex > 0:
+                                self.state = self.STATE_JMATCH
+
+                            else:
+                                self.state = self.STATE_CLEAN
+                                self.played = [ev.key]
 
                         # preprocess match
                         elif (
@@ -636,7 +958,7 @@ init python:
                             ):
                             # we have a match, check to ensure that this key
                             # follows the pattern
-                            findex = self.match.is_match(ev.key)
+                            findex = self.match.isNoteMatch(ev.key)
 
                             # failed match
                             if findex < 0:
@@ -652,34 +974,47 @@ init python:
 
                                         # incase of a double failure, we zero
                                         # the list and the prev time
-                                        self.prev_time = 0
-                                        self.played = list()
+                                        self.played = [ev.key]
 
                                         # clear the match
-                                        self.lastmatch = None
-                                        self.match = None
+ #                                       self.lastmatch = None
+ #                                       self.match = None
 
                                     # this is our first failure, just take note
                                     else:
                                         self.state = self.STATE_MISS
 
-                                # -2 means out of range, we're done with the 
-                                # match
-                                elif findex == -2:
-
-                                    # check for not none post
-                                    if self.match.postnotes:
-                                        self.state = self.STATE_POST
-                                    else:
-                                        self.state = self.STATE_CLEAN
-                                        self.lastmatch = self.match
-                                        self.match = None
-                                    
-                                    self.match.passes += 1
-
                             # otherwise, we matched, but need to clear fails
                             else:
-                                self.state == self.STATE_MATCH
+
+                                # check for finished notes
+                                if self.match.matchdex == len(self.match.notes):
+
+                                    # you passed
+                                    self.match.passes += 1
+
+                                    # post notes flow
+                                    if self.match.postnotes:
+                                        self.state = self.STATE_JPOST
+                                        self.match.matchdex = 0
+
+                                    # next pnm match
+                                    else:
+                                        next_pnm = self.getnotematch()
+
+                                        if next_pnm:
+
+                                            self.match = next_pnm
+                                            self.state = self.STATE_VPOST
+                                            self.setsongmode()
+                                            self.match.matchdex = 0
+                                            self.played = list()
+
+                                        else:
+                                            self.state = self.STATE_CLEAN
+
+                                else:
+                                    self.state = self.STATE_MATCH
 
                         # get a sound to play
                         renpy.play(self.pkeys[ev.key], channel="audio")
