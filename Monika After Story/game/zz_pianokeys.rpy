@@ -70,8 +70,10 @@ init python:
     #   matched - True if we were matched this session, False otherwise
     #   matchdex - Basically an index that says where the last matched note is
     #       in notestr (and notes, by extension)
-    #   timeout - number of seconds before the dialogue should be removed
-    #       after a match is done
+    #   ev_timeout - event timeout that should be used when this match is
+    #       running
+    #   vis_timeout - visual timeout that should be used when this match is
+    #       running
     #   fails - number of failed attempts to play this
     #   passes - number of succesful attempts to play this
     #   postnotes - list of notes (keys) that are considered post match.
@@ -79,15 +81,23 @@ init python:
     #           her expression until a miss or the set is complete.
     #           in both cases, we should expect a clearing of played
     #   postexpress - expression monika should have during post mode
+    #   verse - verse index this phrases belongs to. 0 means first verse,
+    #       other values will be the starting index of that verse
+    #   copynotes - if not None, this is the index of the pnm whose notes
+    #       this matches
+    #   off - True if we played a note wrong here, False if not
     #
     class PianoNoteMatch():
         def __init__(self, 
                 say, 
-                notes, 
+                notes=None, 
                 postnotes=None, 
                 express="1b", 
                 postexpress="1a",
-                timeout=0
+                ev_timeout=None,
+                vis_timeout=None,
+                verse=0,
+                copynotes=None
             ):
             #
             # IN:
@@ -100,16 +110,22 @@ init python:
             #       (Default: 1b)
             #   postexpress - the monika expression to show during post
             #       (Default: 1a)
-            #   timeout - the number of seconds the dialogue should display
-            #       after matches stop
+            #   ev_timeout - number of seconds we want event timeout to be
+            #       (Default: None)
+            #   vis_timeout - number of second we want visual timeout to be
+            #       (Default: None)
+            #   verse - the verse dex the phrase belongs to
             #       (Default: 0)
+            #   copynotes - the index that this pnm note matches with
+            #       (Default: None)
 
-            if notes is None or len(notes) < zzpk.NOTE_SIZE:
-                raise PianoException(
-                    "Notes list must be longer than " + str(zzpk.NOTE_SIZE)
-                )
-            if timeout < 0:
-                raise PianoException("Timeout must be positive number")
+            # sanity checks
+            if notes is None or len(notes) == 0:
+                raise PianoException("Notes list must exist")
+            if verse < 0:
+                raise PianoException("Verse must be positive number")
+            if copynotes is not None and copynotes < 0:
+                raise PianoException("copyntoes must be positive number")
             if type(say) is not Text:
                 raise PianoException("say must be of type Text")
             if not renpy.image_exists("monika " + express):
@@ -123,11 +139,15 @@ init python:
             self.express = "monika " + express
             self.matched = False
             self.matchdex = 0
-            self.timeout = timeout
+            self.ev_timeout = ev_timeout
+            self.vis_timeout = vis_timeout
+            self.off = False
             self.fails = 0
             self.passes = 0
             self.postnotes = postnotes
             self.postexpress = "monika " + postexpress
+            self.verse = verse
+            self.copynotes = copynotes
 
         def isNoteMatch(self, new_key, index=None):
             #
@@ -194,13 +214,18 @@ init python:
         # CONSTANTS
         # timeout
         TIMEOUT = 1.0 # seconds
-        SONG_TIMEOUT = 2.0 # seconds
+        SONG_TIMEOUT = 3.0 # seconds
         SONG_VIS_TIMEOUT = 4.0 # seconds
 #        FAIL_TIMEOUT = 4.0 # number of seconds to display awkward face on fail
 #        MISS_TIMEOUT = 4.0 # number of seconds to display awkard face on miss
 #        MATCH_TIMEOUT = 4.0 # number of seconds to wait for match notes
         VIS_TIMEOUT = 2.5 # number of seconds to wait before changing face
-        
+
+        # verses
+        VER_ONE = 0
+        VER_TWO = 8
+        VER_THR = 15
+        VER_END = 23
 
         # AT_LIST 
         AT_LIST = [i22]
@@ -449,135 +474,452 @@ init python:
                     self.ZZPK_IMG_KEYS_Y
                 )
 
+            # your reality, piano note setup
+            # v#l# -> verse #, line #
+            pnm_yr_v1l1 = PianoNoteMatch(
+                Text(
+                    "Everyday, I imagine a future where I can be with you",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_F5,
+                    self.ZZPK_E5,
+                    self.ZZPK_E5,
+                    self.ZZPK_F5,
+                    self.ZZPK_G5,
+                    self.ZZPK_E5,
+                    self.ZZPK_D5,
+                    self.ZZPK_C5,
+                    self.ZZPK_D5,
+                    self.ZZPK_E5,
+                    self.ZZPK_C5,
+                    self.ZZPK_G4
+                ],
+                postnotes=[
+                    self.ZZPK_G5,
+                    self.ZZPK_A5,
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_A5,
+                    self.ZZPK_G5,
+                    self.ZZPK_C6,
+                    self.ZZPK_C6,
+                    self.ZZPK_A5,
+                    self.ZZPK_B5,
+                    self.ZZPK_G5,
+                    self.ZZPK_A5,
+                    self.ZZPK_B5,
+                    self.ZZPK_G5
+                ],
+                express="1k",
+                postexpress="1j",
+                verse=0
+            )
+            pnm_yr_v1l2 = PianoNoteMatch(
+                Text(
+                    ("In my hands, is a pen that will write a poem of me" +
+                    " and you"),
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_G5,
+                    self.ZZPK_A5,
+                    self.ZZPK_G5,
+                    self.ZZPK_E5,
+                    self.ZZPK_F5,
+                    self.ZZPK_G5,
+                    self.ZZPK_F5,
+                    self.ZZPK_E5,
+                    self.ZZPK_D5,
+                    self.ZZPK_A4,
+                    self.ZZPK_G4,
+                    self.ZZPK_F4,
+                    self.ZZPK_A4,
+                    self.ZZPK_G4,
+                    self.ZZPK_E5,
+                    self.ZZPK_C5
+                ],
+                postnotes=pnm_yr_v1l1.postnotes,
+                express="1b",
+                postexpress="1a",
+                verse=0,
+            )
+            pnm_yr_v1l3 = PianoNoteMatch(
+                Text(
+                    "The ink flows down into a dark puddle",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_F5,
+                    self.ZZPK_E5,
+                    self.ZZPK_C5,
+                    self.ZZPK_C5,
+                    self.ZZPK_D5,
+                    self.ZZPK_E5,
+                    self.ZZPK_G5
+                ],
+                express="1b",
+                postexpress="1a",
+                verse=0
+            )
+            pnm_yr_v1l4 = PianoNoteMatch(
+                Text(
+                    "Just move your hands - write the way into his heart",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_A5,
+                    self.ZZPK_G5,
+                    self.ZZPK_E5,
+                    self.ZZPK_D5,
+                    self.ZZPK_G4,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_D5,
+                    self.ZZPK_C5
+                ],
+                express="1k",
+                postexpress="1j",
+                verse=0
+            )
+            pnm_yr_v1l5 = PianoNoteMatch(
+                Text(
+                    "But in this world of infinite choices",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l3.notes,
+                express="1b",
+                postexpress="1a",
+                verse=0
+            )
+            pnm_yr_v1l6 = PianoNoteMatch(
+                Text(
+                    "What will it take just to find that special day?",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l4.notes,
+                express="1b",
+                postexpress="1a",
+                verse=0
+            )
+            pnm_yr_v1l7 = PianoNoteMatch(
+                Text(
+                    "What will it take just to find",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_A5,
+                    self.ZZPK_G5,
+                    self.ZZPK_E5,
+                    self.ZZPK_D5,
+                    self.ZZPK_G4,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5
+                ],
+                express="1b",
+                postexpress="1a",
+                verse=0
+            )
+            pnm_yr_v1l8 = PianoNoteMatch(
+                Text(
+                    "that special day",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_D5,
+                    self.ZZPK_C5
+                ],
+                express="1k",
+                postexpress="1j",
+                verse=0,
+                ev_timeout=3.0
+            )
+
+            # verse 2
+            pnm_yr_v2l1 = PianoNoteMatch(
+                Text(
+                    "Have I found everobody a fun assignment to do today?",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l1.notes,
+                postnotes=pnm_yr_v1l1.postnotes,
+                express="1b",
+                postexpress="1a",
+                verse=8,
+                copynotes=0
+            )
+            pnm_yr_v2l2 = PianoNoteMatch(
+                Text(
+                    ("When you're here, everything that we do is fun for them"+
+                    " anyway"),
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l2.notes,
+                postnotes=pnm_yr_v1l2.postnotes,
+                express="1k",
+                postexpress="1j",
+                verse=8,
+                copynotes=1
+            )
+            pnm_yr_v2l3 = PianoNoteMatch(
+                Text(
+                    "When I can't even read my own feelings",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l3.notes,
+                express="1g",
+                postexpress="1f",
+                verse=8,
+                copynotes=2
+            )
+            pnm_yr_v2l4 = PianoNoteMatch(
+                Text(
+                    "What good are words",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_A5,
+                    self.ZZPK_G5,
+                    self.ZZPK_E5,
+                    self.ZZPK_D5
+                ],
+                express="1g",
+                postexpress="1f",
+                verse=8
+            )
+            pnm_yr_v2l5 = PianoNoteMatch(
+                Text(
+                    "when a smile says it all?",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_G4,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_D5,
+                    self.ZZPK_C5
+                ],
+                express="1k",
+                postexpress="1j",
+                verse=8
+            )
+            pnm_yr_v2l6 = PianoNoteMatch(
+                Text(
+                    "And if this world won't write me an ending",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l5.notes,
+                express="1g",
+                postexpress="1f",
+                verse=8,
+                copynotes=4
+            )
+            pnm_yr_v2l7 = PianoNoteMatch(
+                Text(
+                    "What will it take just for me to have it all?",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l6.notes,
+                express="1g",
+                postexpress="1e",
+                verse=8,
+                copynotes=5
+            )
+
+            # verse 3
+            pnm_yr_v3l1 = PianoNoteMatch(
+                Text(
+                    ("Does my pen only write bitter words for those who are "+
+                    "dear to me?"),
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l1.notes,
+#                [
+#                    self.ZZPK_G5,
+#                    self.ZZPK_G5,
+#                    self.ZZPK_G5,
+#                    self.ZZPK_F5,
+#                    self.ZZPK_E5,
+#                    self.ZZPK_E5,
+#                    self.ZZPK_F5,
+#                    self.ZZPK_G5,
+#                    self.ZZPK_E5,
+#                    self.ZZPK_D5,
+#                    self.ZZPK_C5,
+#                    self.ZZPK_D5,
+#                    self.ZZPK_E5,
+#                    self.ZZPK_C5,
+#                    self.ZZPK_G4
+#                ],
+                express="1g",
+                postexpress="1e",
+                verse=15,
+                copynotes=0
+            )
+            pnm_yr_v3l2 = PianoNoteMatch(
+                Text(
+                    ("Is it love if I take you, or is it love if I set you " +
+                    "free?"),
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l2.notes,
+                express="1g",
+                postexpress="1e",
+                verse=15,
+                copynotes=1,
+                ev_timeout=7.0,
+                vis_timeout=7.0
+            )
+            pnm_yr_v3l3 = PianoNoteMatch(
+                pnm_yr_v1l3.say,
+                pnm_yr_v1l3.notes,
+                express="1b",
+                postexpress="1a",
+                verse=15,
+                copynotes=2,
+                ev_timeout=10.0,
+                vis_timeout=10.0
+            )
+            pnm_yr_v3l4 = PianoNoteMatch(
+                Text(
+                    "How can I write love into reality?",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l4.notes,
+                express="1g",
+                postexpress="1e",
+                verse=15,
+                copynotes=3
+            )
+            pnm_yr_v3l5 = PianoNoteMatch(
+                Text(
+                    "If I can't hear the sound of your heartbeat",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l5.notes,
+                express="1p",
+                postexpress="1o",
+                verse=15,
+                copynotes=4
+            )
+            pnm_yr_v3l6 = PianoNoteMatch(
+                Text(
+                    "What do you call love in your reality?",
+                    style="monika_credits_text"
+                ),
+                pnm_yr_v1l6.notes,
+                express="1g",
+                postexpress="1e",
+                verse=15,
+                copynotes=5
+            )
+            pnm_yr_v3l7 = PianoNoteMatch(
+                Text(
+                    "And in your reality, if I don't know how to love you",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_G4,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_D5,
+                    self.ZZPK_C5,
+                    self.ZZPK_E5,
+                    self.ZZPK_F5,
+                    self.ZZPK_F5,
+                    self.ZZPK_E5,
+                    self.ZZPK_C5,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_G5
+                ],
+                postnotes=[
+                    self.ZZPK_G5,
+                    self.ZZPK_E5,
+                    self.ZZPK_F5,
+                    self.ZZPK_C5,
+                    self.ZZPK_A5,
+                    self.ZZPK_G5
+                ],
+                express="1p",
+                postexpress="1m",
+                verse=15
+            )
+            pnm_yr_v3l8 = PianoNoteMatch(
+                Text(
+                    "I'll leave you be",
+                    style="monika_credits_text"
+                ),
+                [
+                    self.ZZPK_G4,
+                    self.ZZPK_A4,
+                    self.ZZPK_C5,
+                    self.ZZPK_C5
+                ],
+                postnotes=[
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_G5,
+                    self.ZZPK_F5,
+                    self.ZZPK_E5,
+                    self.ZZPK_F5,
+                    self.ZZPK_G5,
+                    self.ZZPK_A5,
+                    self.ZZPK_B5,
+                    self.ZZPK_G5,
+                    self.ZZPK_B5,
+                    self.ZZPK_G5
+                ],
+                express="1b",
+                postexpress="1a",
+                ev_timeout=5.0,
+                vis_timeout=5.0
+            )
+
+
+
             # your reality, note matching
-            # NOTE: This works by peforming `in` matches of lists.
+            # NOTE: This works by peforming `in` matches of strings
             self.pnm_yourreality = [
-                PianoNoteMatch(
-                    Text(
-                        "Everyday, I imagine a future where I can be with you",
-                        style="monika_credits_text"
-                    ),
-                    [
-                        self.ZZPK_G5,
-                        self.ZZPK_G5,
-                        self.ZZPK_G5,
-                        self.ZZPK_G5,
-                        self.ZZPK_F5,
-                        self.ZZPK_E5,
-                        self.ZZPK_E5,
-                        self.ZZPK_F5,
-                        self.ZZPK_G5,
-                        self.ZZPK_E5,
-                        self.ZZPK_D5,
-                        self.ZZPK_C5,
-                        self.ZZPK_D5,
-                        self.ZZPK_E5,
-                        self.ZZPK_C5,
-                        self.ZZPK_G4
-                    ],
-                    postnotes=[
-                        self.ZZPK_G5,
-                        self.ZZPK_A5,
-                        self.ZZPK_G5,
-                        self.ZZPK_G5,
-                        self.ZZPK_A5,
-                        self.ZZPK_G5,
-                        self.ZZPK_C6,
-                        self.ZZPK_C6,
-                        self.ZZPK_A5,
-                        self.ZZPK_B5,
-                        self.ZZPK_G5,
-                        self.ZZPK_A5,
-                        self.ZZPK_B5,
-                        self.ZZPK_G5
-                    ],
-                    express="1k",
-                    postexpress="1j"
-                ),
-                PianoNoteMatch(
-                    Text(
-                        ("In my hands, is a pen that will write a poem of me" +
-                        " and you"),
-                        style="monika_credits_text"
-                    ),
-                    [
-                        self.ZZPK_G5,
-                        self.ZZPK_A5,
-                        self.ZZPK_G5,
-                        self.ZZPK_E5,
-                        self.ZZPK_F5,
-                        self.ZZPK_G5,
-                        self.ZZPK_F5,
-                        self.ZZPK_E5,
-                        self.ZZPK_D5,
-                        self.ZZPK_A4,
-                        self.ZZPK_G4,
-                        self.ZZPK_F4,
-                        self.ZZPK_A4,
-                        self.ZZPK_G4,
-                        self.ZZPK_E5,
-                        self.ZZPK_C5
-                    ],
-                    postnotes=[
-                        self.ZZPK_G5,
-                        self.ZZPK_A5,
-                        self.ZZPK_G5,
-                        self.ZZPK_G5,
-                        self.ZZPK_A5,
-                        self.ZZPK_G5,
-                        self.ZZPK_C6,
-                        self.ZZPK_C6,
-                        self.ZZPK_A5,
-                        self.ZZPK_B5,
-                        self.ZZPK_G5,
-                        self.ZZPK_A5,
-                        self.ZZPK_B5,
-                        self.ZZPK_G5
-                    ],
-                    express="1b",
-                    postexpress="1a"
-                ),
-                PianoNoteMatch(
-                    Text(
-                        "The ink flows down into a dark puddle",
-                        style="monika_credits_text"
-                    ),
-                    [
-                        self.ZZPK_G5,
-                        self.ZZPK_G5,
-                        self.ZZPK_G5,
-                        self.ZZPK_F5,
-                        self.ZZPK_E5,
-                        self.ZZPK_C5,
-                        self.ZZPK_C5,
-                        self.ZZPK_D5,
-                        self.ZZPK_E5,
-                        self.ZZPK_G5
-                    ],
-                    express="1b",
-                    postexpress="1a"
-                ),
-                PianoNoteMatch(
-                    Text(
-                        "Just move your hands - write the way into his heart",
-                        style="monika_credits_text"
-                    ),
-                    [
-                        self.ZZPK_A5,
-                        self.ZZPK_G5,
-                        self.ZZPK_E5,
-                        self.ZZPK_D5,
-                        self.ZZPK_G4,
-                        self.ZZPK_A4,
-                        self.ZZPK_C5,
-                        self.ZZPK_A4,
-                        self.ZZPK_C5,
-                        self.ZZPK_D5,
-                        self.ZZPK_C5
-                    ],
-                    express="1k",
-                    postexpress="1j"
-                )
+                pnm_yr_v1l1,
+                pnm_yr_v1l2,
+                pnm_yr_v1l3,
+                pnm_yr_v1l4,
+                pnm_yr_v1l5,
+                pnm_yr_v1l6,
+                pnm_yr_v1l7,
+                pnm_yr_v1l8,
+                pnm_yr_v2l1,
+                pnm_yr_v2l2,
+                pnm_yr_v2l3,
+                pnm_yr_v2l4,
+                pnm_yr_v2l5,
+                pnm_yr_v2l6,
+                pnm_yr_v2l7,
+                pnm_yr_v3l1,
+                pnm_yr_v3l2,
+                pnm_yr_v3l3,
+                pnm_yr_v3l4,
+                pnm_yr_v3l5,
+                pnm_yr_v3l6,
+                pnm_yr_v3l7,
+                pnm_yr_v3l8
             ]
 
             # list containing lists of matches. 
@@ -619,8 +961,12 @@ init python:
             self.ev_timeout = self.TIMEOUT
             self.vis_timeout = self.VIS_TIMEOUT
 
+            # current verse
+            self.versedex = 0
+            self.nextversedex = 8
+
             # DEBUG: NOTE:
-            self.testing = open("piano", "w+")
+#            self.testing = open("piano", "w+")
 
         def findnotematch(self, notes):
             #
@@ -636,13 +982,23 @@ init python:
             # convert to string for ease of us
             notestr = "".join([chr(x) for x in notes])
 
-            for index in range(0, len(self.pnm_yourreality)):
+            # setup the proper range to check verses
+            if self.versedex == self.VER_ONE:
+                verses = range(self.VER_ONE, self.VER_TWO)
+            elif self.versedex == self.VER_TWO:
+                verses = range(self.VER_TWO, self.VER_THR)
+            elif self.versedex == self.VER_THR:
+                verses = range(self.VER_THR, self.VER_END)
+
+            for index in verses:
                 pnm = self.pnm_yourreality[index]
+
                 findex = pnm.notestr.find(notestr)
                 if findex >= 0:
                     pnm.matchdex = findex + len(notestr)
                     pnm.matched = True
                     self.pnm_index = index
+                    self.versedex = pnm.verse
                     return pnm
 
             return None
@@ -665,21 +1021,40 @@ init python:
                 index = self.pnm_index
 
             if index >= len(self.pnm_yourreality):
+                self.versedex = 0
                 return None
 
-            return self.pnm_yourreality[index]
+            new_pnm = self.pnm_yourreality[index]
 
-        def setsongmode(self, songmode=True):
+            # settting up the proper next verse
+            if self.versedex != new_pnm.verse:
+                self.versedex = new_pnm.verse
+
+            return new_pnm
+
+        def setsongmode(self, songmode=True, ev_tout=None, vis_tout=None):
             #
             # sets our timeout vars into song mode
             #
             # IN:
             #   songmode - True means set into song mode, False means get out
             #       (Default: True)
+            #   ev_tout - use a custom ev timeout for song mode
+            #       (Default: None)
+            #   vis_tout - use a custom vis timeout for song mode
+            #       (Default: None)
 
             if songmode:
-                self.ev_timeout = self.SONG_TIMEOUT
-                self.vis_timeout = self.SONG_VIS_TIMEOUT
+
+                if ev_tout:
+                    self.ev_timeout = ev_tout
+                else:
+                    self.ev_timeout = self.SONG_TIMEOUT
+
+                if vis_tout:
+                    self.vis_timeout = vis_tout
+                else:
+                    self.vis_timeout = self.SONG_VIS_TIMEOUT
             else:
                 self.ev_timeout = self.TIMEOUT
                 self.vis_timeout = self.VIS_TIMEOUT
@@ -779,9 +1154,8 @@ init python:
                 elif self.state == self.STATE_VPOST:
                     
                     # display the post expression
-                    if self.match.postexpress:
-                        renpy.show(self.match.postexpress)
-                        restart_int = True
+                    renpy.show(self.lastmatch.postexpress)
+                    restart_int = True
 
                     # hide text
                     self.lyric = None
@@ -932,7 +1306,10 @@ init python:
                                     self.match = next_pnm
                                     self.state = self.STATE_WPOST
                                     self.played = list()
-                                    self.setsongmode()
+                                    self.setsongmode(
+                                        ev_tout=next_pnm.ev_timeout,
+                                        vis_tout=next_pnm.vis_timeout
+                                    )
 
                                 # abourt please
                                 else:
@@ -982,6 +1359,7 @@ init python:
 
                                     # this is our first failure, just take note
                                     else:
+                                        self.match.off = True
                                         self.state = self.STATE_MISS
 
                             # otherwise, we matched, but need to clear fails
@@ -995,6 +1373,7 @@ init python:
 
                                     # post notes flow
                                     if self.match.postnotes:
+
                                         self.state = self.STATE_JPOST
                                         self.match.matchdex = 0
 
@@ -1004,9 +1383,13 @@ init python:
 
                                         if next_pnm:
 
+                                            self.lastmatch = self.match
                                             self.match = next_pnm
                                             self.state = self.STATE_VPOST
-                                            self.setsongmode()
+                                            self.setsongmode(
+                                                ev_tout=next_pnm.ev_timeout,
+                                                vis_tout=next_pnm.vis_timeout
+                                            )
                                             self.match.matchdex = 0
                                             self.played = list()
 
