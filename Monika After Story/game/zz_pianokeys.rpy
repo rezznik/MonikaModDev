@@ -148,6 +148,9 @@ label zz_play_piano:
 #
 # (I'll leave you be)
 # w e t t
+#
+# Extra post:
+# o o o oiu iop [ o [ o (chord: t u o)
 
 # keep the above for reference
 # DISPLAYABLE:
