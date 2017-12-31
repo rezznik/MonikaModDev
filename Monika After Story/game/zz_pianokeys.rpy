@@ -25,7 +25,7 @@ label zz_play_piano:
 
     # call the display
     $ ui.add(PianoDisplayable())
-    $ result = ui.interact()
+    $ passes,fails,misses,verse,full_combo = ui.interact()
 
     # post call cleanup
     hide text quit_label
@@ -35,7 +35,11 @@ label zz_play_piano:
     $ play_song(store.songs.selected_track)
 
     show monika 1j at t11
-    m 1j "That was wonderful, [player]!"
+
+    if full_combo:
+        m 1d "Oh my, [player]!{w} I can't believe you know my song so well."
+        m 1j "You must really love me"
+        m 1j "That was wonderful, [player]!"
     return
 
 # keep the above for reference
@@ -85,7 +89,7 @@ init python:
     #       other values will be the starting index of that verse
     #   copynotes - if not None, this is the index of the pnm whose notes
     #       this matches
-    #   off - True if we played a note wrong here, False if not
+    #   misses - number of misses we got
     #
     class PianoNoteMatch():
         def __init__(self, 
@@ -141,7 +145,7 @@ init python:
             self.matchdex = 0
             self.ev_timeout = ev_timeout
             self.vis_timeout = vis_timeout
-            self.off = False
+            self.misses = 0
             self.fails = 0
             self.passes = 0
             self.postnotes = postnotes
@@ -571,7 +575,7 @@ init python:
             )
             pnm_yr_v1l4 = PianoNoteMatch(
                 Text(
-                    "Just move your hands - write the way into his heart",
+                    "Just move your hand, write the way into his heart",
                     style="monika_credits_text"
                 ),
                 [
@@ -649,7 +653,7 @@ init python:
             # verse 2
             pnm_yr_v2l1 = PianoNoteMatch(
                 Text(
-                    "Have I found everobody a fun assignment to do today?",
+                    "Have I found everybody a fun assignment to do today?",
                     style="monika_credits_text"
                 ),
                 pnm_yr_v1l1.notes,
@@ -1262,7 +1266,41 @@ init python:
 
                 # but first, check for quit ("Z")
                 if ev.key == self.ZZPK_QUIT:
-                    return "q" # quit this game
+            
+                    # process this game
+                    passes = 0
+                    fails = 0
+                    misses = 0
+                    latest_dex = 0
+                    full_combo = True
+
+                    # grab all this data
+                    for index in range(0, len(self.pnm_yourreality)):
+                        pnm = self.pnm_yourreality[index]
+                        passes += pnm.passes
+                        fails += pnm.fails
+                        misses += pnm.misses
+                        
+                        if pnm.passes > 0:
+                            latest_dex = index
+                            
+                        elif (
+                                pnm.misses > 0
+                                or pnm.fails > 0
+                                or pnm.passes == 0
+                            ):
+                            full_combo = False
+
+                    if latest_dex < self.VER_TWO:
+                        verse = 1
+                    elif latest_dex < self.VER_THR:
+                        verse = 2
+                    elif latest_dex < self.VER_END:
+                        verse = 3
+                    else:
+                        verse = 0
+                    
+                    return (passes,fails,misses,verse,full_combo)
                 else:
 
                     # only play a sound if we've lifted the finger
@@ -1359,7 +1397,7 @@ init python:
 
                                     # this is our first failure, just take note
                                     else:
-                                        self.match.off = True
+                                        self.match.misses += 1
                                         self.state = self.STATE_MISS
 
                             # otherwise, we matched, but need to clear fails
