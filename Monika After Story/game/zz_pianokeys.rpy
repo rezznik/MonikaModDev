@@ -8,6 +8,10 @@ transform piano_quit_label:
 transform piano_lyric_label:
     xalign 0.5 yalign 0.5
 
+# super xp for playing well
+define xp.ZZPK_FULLCOMBO = 75
+define xp.ZZPK_PRACTICE = 35
+
 # label that calls this creen
 label zz_play_piano:
     m 1j "You want to play the piano?"
@@ -36,11 +40,114 @@ label zz_play_piano:
 
     show monika 1j at t11
 
+    # you are good player
     if full_combo:
-        m 1d "Oh my, [player]!{w} I can't believe you know my song so well."
-        m 1j "You must really love me"
+        $ grant_xp(xp.ZZPK_FULLCOMBO)
         m 1j "That was wonderful, [player]!"
+        m 1a "I didn't know you can play the piano so well."
+        m "Maybe we should play together sometime."
+
+    # passed at least once, but had some misses
+    elif passes >= 0 and misses >= 0:
+        $ grant_xp(xp.ZZPK_PRACTICE)
+        m 1a "That was nice, [player]!"
+        m 1j "But you could use a little practice."
+
+    # otherwise, we don't really know what you were playing, so we assume
+    # it was good
+    else:
+        m 1a "That was nice, [player]!"
+
+    # do we want to say anthing about the verses?
+#    if verse == 0:
+        # didnt even play a verse
+#    elif verse == 1:
+        # you played one verse
+#    elif verse == 2:
+        # you played two verse
+#    elif verse == 3:
+        # you played all 3 verses
+
     return
+
+#### HOW TO FULL COMBO:
+# (Everday, I can imagine a future...)
+# o o o oiu uio u y t y u t w
+# opo opo ] ] p[ op [ o
+#
+# (In my hands, is a pen...)
+# o p o uio iuy e w q e w u t
+# opo opo ] ] p[ op [ o
+#
+# (The ink flows down...)
+# o o o i u t t y u o
+#
+# (Just move your hands ...)
+# p o u y  w e t  e t y t
+#
+# (but in this world..)
+# o o o i  u t t y u o
+#
+# (What will it take..)
+# p o u y   w e t   e t y t
+#
+# (What will it take)
+# p o u y  w e t
+#
+# (that special day)
+# e t y t
+#
+# [break]
+#
+# (Have i found, everybody....)
+# o o o oiu uio u y t y u t w
+# opo opo ] ] p[ op [ o
+#
+# (When you're here....)
+# o p o uio iuy e w q e w u t
+# opo opo ] ] p[ op [ o
+#
+# (when i cant even read...)
+# o o o i u t t y u o
+#
+# (What good are words)
+# p o u y
+#
+# (when a smile says it all)
+# w e t  e t y t
+#
+# (and if this world...)
+# o o o i  u t t y u o
+#
+# (what will it take, just for me...)
+# p o u y   w e t   e t y t
+#
+# [break]
+#
+# (does my pen, only write...)
+# o o o oiu uio u y t y u t w
+#
+# (is it love...)
+# o p o uio iuy e w q e w u t
+#
+# (The ink flows down...)
+# o o o i u t t y u o
+#
+# (how can i write...)
+# p o u y  w e t  e t y t
+#
+# (if i cant hear...)
+# o o o i  u t t y u o
+#
+# (what do you call...)
+# p o u y   w e t   e t y t
+#
+# (and in your reality, if i dont know how to love you
+# w e t  e t y t u i i u t e t o
+# o u i t p o
+#
+# (I'll leave you be)
+# w e t t
 
 # keep the above for reference
 # DISPLAYABLE:
@@ -90,6 +197,10 @@ init python:
     #   copynotes - if not None, this is the index of the pnm whose notes
     #       this matches
     #   misses - number of misses we got
+    #   posttext - True if we should keep the text up for post expression,
+    #       False if not
+    #   redraw_time - number of seconds we should plan redraw. This should
+    #       be lower than the next pnm's vis_timeout
     #
     class PianoNoteMatch():
         def __init__(self, 
@@ -101,7 +212,9 @@ init python:
                 ev_timeout=None,
                 vis_timeout=None,
                 verse=0,
-                copynotes=None
+                copynotes=None,
+                posttext=False,
+                redraw_time=None
             ):
             #
             # IN:
@@ -114,14 +227,21 @@ init python:
             #       (Default: 1b)
             #   postexpress - the monika expression to show during post
             #       (Default: 1a)
-            #   ev_timeout - number of seconds we want event timeout to be
+            #   ev_timeout - number of seconds we wait for input
             #       (Default: None)
-            #   vis_timeout - number of second we want visual timeout to be
+            #   vis_timeout - number of second we wait for visual change
             #       (Default: None)
             #   verse - the verse dex the phrase belongs to
             #       (Default: 0)
             #   copynotes - the index that this pnm note matches with
             #       (Default: None)
+            #   posttext - True if we keep the text up during post, False
+            #       otherwise
+            #       (Default: False)
+            #   redraw_time - number of seconds until we redraw ourselves
+            #       NOTE: This should be less than the next PianoNoteMatch
+            #       vis_timeout
+            #       (Defualt: None)
 
             # sanity checks
             if notes is None or len(notes) == 0:
@@ -152,6 +272,8 @@ init python:
             self.postexpress = "monika " + postexpress
             self.verse = verse
             self.copynotes = copynotes
+            self.posttext = posttext
+            self.redraw_time = redraw_time
 
         def isNoteMatch(self, new_key, index=None):
             #
@@ -253,8 +375,9 @@ init python:
         STATE_JPOST = 5 # we just entered post match
         STATE_POST = 6 # post match state, where we match post notes 
         STATE_VPOST = 7 # only visual post match, until next key is hit or time
-        STATE_WPOST = 8 # waitin post-state
-        STATE_CLEAN = 9 # reset things
+        STATE_CPOST = 8 # special cleanup state, for post, only does visual
+        STATE_WPOST = 9 # waitin post-state
+        STATE_CLEAN = 10 # reset things
 
         # key limit for matching
         KEY_LIMIT = 100
@@ -631,7 +754,9 @@ init python:
                 ],
                 express="1b",
                 postexpress="1a",
-                verse=0
+                verse=0,
+                posttext=True,
+                redraw_time=3.0
             )
             pnm_yr_v1l8 = PianoNoteMatch(
                 Text(
@@ -647,7 +772,10 @@ init python:
                 express="1k",
                 postexpress="1j",
                 verse=0,
-                ev_timeout=3.0
+                ev_timeout=3.0,
+                vis_timeout=3.0,
+                posttext=True,
+                redraw_time=3.0
             )
 
             # verse 2
@@ -661,7 +789,9 @@ init python:
                 express="1b",
                 postexpress="1a",
                 verse=8,
-                copynotes=0
+                copynotes=0,
+                ev_timeout=15.0,
+                vis_timeout=15.0
             )
             pnm_yr_v2l2 = PianoNoteMatch(
                 Text(
@@ -700,7 +830,9 @@ init python:
                 ],
                 express="1g",
                 postexpress="1f",
-                verse=8
+                verse=8,
+                posttext=True,
+                redraw_time=2.0
             )
             pnm_yr_v2l5 = PianoNoteMatch(
                 Text(
@@ -718,7 +850,9 @@ init python:
                 ],
                 express="1k",
                 postexpress="1j",
-                verse=8
+                verse=8,
+                posttext=True,
+                redraw_time=3.0
             )
             pnm_yr_v2l6 = PianoNoteMatch(
                 Text(
@@ -740,7 +874,8 @@ init python:
                 express="1g",
                 postexpress="1e",
                 verse=8,
-                copynotes=5
+                copynotes=5,
+                redraw_time=5.0
             )
 
             # verse 3
@@ -771,7 +906,9 @@ init python:
                 express="1g",
                 postexpress="1e",
                 verse=15,
-                copynotes=0
+                copynotes=0,
+                ev_timeout=25.0,
+                vis_timeout=25.0
             )
             pnm_yr_v3l2 = PianoNoteMatch(
                 Text(
@@ -893,7 +1030,9 @@ init python:
                 express="1b",
                 postexpress="1a",
                 ev_timeout=5.0,
-                vis_timeout=5.0
+                vis_timeout=5.0,
+                posttext=True,
+                redraw_time=5.0
             )
 
 
@@ -935,6 +1074,7 @@ init python:
             # list of notes we have played
             self.played = list()
             self.prev_time = 0
+            self.drawn_time = 0
             
             # currently matched dialogue
             self.match = None
@@ -1119,6 +1259,9 @@ init python:
             # True if we need to do an interaction restart
             restart_int = False
 
+            # True if we already called a redraw
+            redrawn = False
+
             # check if we are currently matching something
             # NOTE: the following utilizies renpy.show, which means we need
             #   to use renpy.restart_interaction(). This also means that the
@@ -1162,8 +1305,37 @@ init python:
                     restart_int = True
 
                     # hide text
-                    self.lyric = None
-                    self.state = self.STATE_WPOST
+                    if not self.lastmatch.posttext:
+                        self.lyric = None
+
+                    # setup visual timeout
+                    if self.lastmatch.redraw_time:
+                        renpy.redraw(self, self.lastmatch.redraw_time)
+                        self.drawn_time = st
+                        self.state = self.STATE_CPOST
+                        redrawn = True
+
+                    else:
+                        self.state = self.STATE_WPOST
+
+                elif self.state == self.STATE_CPOST:
+
+                    # check if timeout
+                    if st-self.drawn_time >= self.lastmatch.redraw_time:
+
+                        # display default monika
+                        renpy.show(self.DEFAULT)
+
+                        # hide text
+                        self.lyric = None
+
+                        restart_int = True
+                        self.state = self.STATE_WPOST
+
+                    # force a redraw in a second
+                    else:
+                        renpy.redraw(self, 1.0)
+                        redrawn = True
 
                 elif self.state == self.STATE_JPOST:
                     
@@ -1171,7 +1343,8 @@ init python:
                     renpy.show(self.match.postexpress)
 
                     # hide text
-                    self.lyric = None
+                    if not self.match.posttext:
+                        self.lyric = None
 
                     restart_int = True
                     self.state = self.STATE_POST
@@ -1188,8 +1361,8 @@ init python:
                     self.state = self.STATE_CLEAN
 
                 # redraw timeout
-                renpy.redraw(self, self.VIS_TIMEOUT)
-
+                if not redrawn:
+                    renpy.redraw(self, self.VIS_TIMEOUT)
 
             if self.lyric:
                 lyric_bar = renpy.render(self.lyrical_bar, 1280, 720, st, at)
@@ -1354,7 +1527,10 @@ init python:
                                     self.state = self.STATE_CLEAN
 
                         # waiting post
-                        elif self.state == self.STATE_WPOST:
+                        elif (
+                                self.state == self.STATE_WPOST
+                                or self.state == self.STATE_CPOST
+                            ):
                             # here we check the just hit note for matching
                             findex = self.match.isNoteMatch(ev.key, index=0)
 

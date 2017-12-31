@@ -359,6 +359,8 @@ label pick_a_game:
                     $ grant_xp(xp.NEW_GAME)
                 call game_hangman from _call_game_hangman
             "Piano":
+                if not renpy.seen_label("zz_play_piano"):
+                    $ grant_xp(xp.NEW_GAME)
                 call zz_play_piano from _call_play_piano
             "Nevermind":
                 m "Alright. Maybe later?"
